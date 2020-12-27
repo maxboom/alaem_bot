@@ -20,12 +20,6 @@ type AlarmsRepositoryT struct {
 func (AlarmsRepositoryT) GetCurrentAlarms() []entity.DBAlaramT {
 	db, err := sql.Open("mysql", "root:password@tcp(mysql)/project")
 
-	// fmt.Println("asdad")
-
-	// var test string
-	// db.QueryRow("SELECT NOW()").Scan(&test)
-	// fmt.Println(test)
-
 	results, err := db.Query("select u.username, a.text from alarms a inner join users u on a.user_id = u.id where time = DATE_FORMAT(NOW(), '%k:%i')")
 	// results, err := db.Query("select u.username, a.text from alarms a inner join users u on a.user_id = u.id LIMIT 1")
 

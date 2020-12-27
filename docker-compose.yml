@@ -6,8 +6,6 @@ services:
       context: ./
     working_dir: /go/src
     command: go run main.go
-    networks:
-      - default
     volumes:
       - ./src:/go/src
 
@@ -16,29 +14,11 @@ services:
       dockerfile: ./docker/go/Dockerfile
       context: ./
     working_dir: /go/src
-    # entrypoint: /go/src/ticker.sh
     command: go run ticker.go
-    networks:
-      - default
     volumes:
       - ./src:/go/src
 
   mysql:
     image: mysql:5.7
     command: mysqld --sql-mode="NO_ENGINE_SUBSTITUTION"
-    networks:
-      - default
-    ports:
-      - "33067:3306"
-    volumes:
-      - docker_mysql:/var/lib/mysql
-    environment:
-      - MYSQL_DATABASE=project
-      - MYSQL_USER=developer
-      - MYSQL_ROOT_PASSWORD=password
-      - MYSQL_PASSWORD=password
-      - TZ=Europe/Kiev
-
-volumes:
-  docker_mysql:
 
