@@ -6,3 +6,8 @@ type DBUserT struct {
 	Username     string
 	IsAuthorized bool
 }
+
+// TableName method
+func (DBUserT) TableName() string {
+	return "users"
+}

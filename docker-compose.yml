@@ -6,6 +6,7 @@ services:
       context: ./
     working_dir: /go/src
     command: go run main.go
+    # command: ./bot.sh
     volumes:
       - ./src:/go/src
 
@@ -21,4 +22,3 @@ services:
   mysql:
     image: mysql:5.7
     command: mysqld --sql-mode="NO_ENGINE_SUBSTITUTION"
-

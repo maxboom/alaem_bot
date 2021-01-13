@@ -2,6 +2,9 @@ package repositories
 
 import (
 	"database/sql"
+
+	"gorm.io/gorm"
+
 	"entity"
 	"fmt"
 )
@@ -9,7 +12,7 @@ import (
 // AlarmsRepositoryI Interface
 type AlarmsRepositoryI interface {
 	GetCurrentAlarms() []entity.DBAlaramT
-	AddAlarm(db *sql.DB, user entity.DBUserT, time string, text string)
+	AddAlarm(db *gorm.DB, user entity.DBUserT, time string, text string) entity.DBAlaramT
 }
 
 // AlarmsRepositoryT Struct
@@ -19,6 +22,12 @@ type AlarmsRepositoryT struct {
 // GetCurrentAlarms Method
 func (AlarmsRepositoryT) GetCurrentAlarms() []entity.DBAlaramT {
 	db, err := sql.Open("mysql", "root:password@tcp(mysql)/project")
+
+	// fmt.Println("asdad")
+
+	// var test string
+	// db.QueryRow("SELECT NOW()").Scan(&test)
+	// fmt.Println(test)
 
 	results, err := db.Query("select u.username, a.text from alarms a inner join users u on a.user_id = u.id where time = DATE_FORMAT(NOW(), '%k:%i')")
 	// results, err := db.Query("select u.username, a.text from alarms a inner join users u on a.user_id = u.id LIMIT 1")
@@ -35,7 +44,7 @@ func (AlarmsRepositoryT) GetCurrentAlarms() []entity.DBAlaramT {
 	for results.Next() {
 		var alarm entity.DBAlaramT
 		// for each row, scan the result into our tag composite object
-		err = results.Scan(&alarm.Username, &alarm.Text)
+		err = results.Scan(&alarm.User, &alarm.Text)
 		if err != nil {
 			panic(err.Error()) // proper error handling instead of panic in your app
 		}
@@ -47,12 +56,14 @@ func (AlarmsRepositoryT) GetCurrentAlarms() []entity.DBAlaramT {
 }
 
 // AddAlarm Method
-func (AlarmsRepositoryT) AddAlarm(db *sql.DB, user entity.DBUserT, time string, text string) {
-	insert, err := db.Query("INSERT INTO alarms (user_id, time, text) VALUES ('" + fmt.Sprintf("%d", user.ID) + "', '" + time + "', '" + text + "')")
-
-	if err != nil {
-		fmt.Println(err.Error())
-		panic(err.Error())
+func (AlarmsRepositoryT) AddAlarm(db *gorm.DB, user entity.DBUserT, time string, text string) entity.DBAlaramT {
+	var alarm = entity.DBAlaramT{
+		User: user,
+		Time: time,
+		Text: &text,
 	}
-	defer insert.Close()
+
+	db.Create(&alarm)
+
+	return alarm
 }

@@ -1,9 +1,14 @@
 package entity
 
-import "database/sql"
-
 // DBAlaramT Type
 type DBAlaramT struct {
-	Username string
-	Text     sql.NullString
+	User   DBUserT `gorm:"foreignKey:UserID"`
+	UserID int
+	Text   *string
+	Time   string
+}
+
+// TableName method
+func (DBAlaramT) TableName() string {
+	return "alarms"
 }

@@ -1,15 +1,15 @@
 package repositories
 
 import (
-	"database/sql"
 	"entity"
-	"fmt"
+
+	"gorm.io/gorm"
 )
 
 // UserRepositoryI Interface
 type UserRepositoryI interface {
-	GetUser(db *sql.DB, username string) entity.DBUserT
-	CreateUser(db *sql.DB, username string)
+	GetUser(db *gorm.DB, username string) entity.DBUserT
+	UpdateUser(db *gorm.DB, user entity.DBUserT) entity.DBUserT
 }
 
 // UserRepositoryT Type
@@ -17,30 +17,20 @@ type UserRepositoryT struct {
 }
 
 // GetUser Method
-func (s UserRepositoryT) GetUser(db *sql.DB, username string) entity.DBUserT {
+func (UserRepositoryT) GetUser(db *gorm.DB, username string) entity.DBUserT {
 	var user entity.DBUserT
 
-	err := db.QueryRow("SELECT id, username, is_authorized FROM users where username = ?", username).Scan(&user.ID, &user.Username, &user.IsAuthorized)
-
-	if err != nil {
-		fmt.Println(err.Error())
-		panic(err.Error())
-	}
-
-	defer db.Close()
+	db.FirstOrCreate(&user, entity.DBUserT{
+		Username:     username,
+		IsAuthorized: false,
+	})
 
 	return user
 }
 
-// CreateUser Method
-func (s UserRepositoryT) CreateUser(db *sql.DB, username string) {
+// UpdateUser Method
+func (UserRepositoryT) UpdateUser(db *gorm.DB, user entity.DBUserT) entity.DBUserT {
+	db.Save(user)
 
-	insert, err := db.Query("INSERT INTO users (username, is_authorized) VALUES ('" + username + "', true )")
-
-	if err != nil {
-		fmt.Println(err.Error())
-		panic(err.Error())
-	}
-
-	defer insert.Close()
+	return UserRepositoryT{}.GetUser(db, user.Username)
 }

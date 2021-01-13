@@ -1,135 +1,161 @@
 package main
 
 import (
-	"callmebotapi"
-	"database/sql"
-	"entity"
 	"fmt"
+	"log"
 	"regexp"
 	"repositories"
 	"strings"
-	"telegramapi"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	tb "gopkg.in/tucnak/telebot.v2"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
 
-const token = "bot1488442278:AAEsGoCz5v_8DLrXsSQVKVNdlyBjBKdYnn8"
-
 func main() {
-	botData := telegramapi.BotSettingsT{Token: token}
-	getUpdatesRequest := telegramapi.GetUpdatesRequestT{Offset: 0}
+	dsn := "root:password@tcp(mysql)/project?charset=utf8mb4&parseTime=True&loc=Local"
+	db, error := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 
-	for {
-		fmt.Println(fmt.Sprintf("%d", getUpdatesRequest.Offset))
+	if error != nil {
+		log.Fatal(error)
+		return
+	}
 
-		getUpdates := telegramapi.BotT{}.GetUpdates(botData, getUpdatesRequest)
+	poller := &tb.LongPoller{Timeout: 1 * time.Second}
 
-		fmt.Println(getUpdates)
+	// auth := tb.NewMiddlewarePoller(poller, func(update *tb.Update) bool {
+	// 	user := repositories.UserRepositoryT{}.GetUser(db, update.Message.Sender.Username)
 
-		for _, update := range getUpdates.Result {
-			getUpdatesRequest.Offset = update.UpdateID
-			getUpdatesRequest.Offset++
+	// 	var regex = regexp.MustCompile("^\\/(start|test)$")
 
-			fmt.Println(fmt.Sprintf("%d", update.UpdateID))
+	// 	if user.IsAuthorized == false && regex.MatchString(update.Message.Text) == false {
+	// 		fmt.Println("False")
+	// 		return false
+	// 	}
 
-			user := getOrCreate(getSQLConnection(), update.Message.From.Username)
+	// 	return true
+	// })
 
-			fmt.Println(user)
+	bot, error := tb.NewBot(tb.Settings{
+		Token:     "1488442278:AAEsGoCz5v_8DLrXsSQVKVNdlyBjBKdYnn8",
+		Poller:    poller,
+		ParseMode: tb.ModeHTML,
+	})
 
-			if !user.IsAuthorized {
-				if strings.ToLower(update.Message.Text) == "/start" {
-					sendMessage := telegramapi.SendMessageT{ChatID: update.Message.Chat.ID, Message: "Привет! \nЯ бот котороый тебя заебет! \nДля успешной работы бота перейди по линке: https://api2.callmebot.com/txt/auth.php \nНажми /test Что бы сделать тестовый вызов "}
+	if error != nil {
+		log.Fatal(error)
+		return
+	}
 
-					telegramapi.BotT{}.SendMessage(botData, sendMessage)
-				}
+	menu := &tb.ReplyMarkup{
+		ResizeReplyKeyboard: true,
+		OneTimeKeyboard:     true,
+		ReplyKeyboardRemove: true,
+	}
 
-				if strings.ToLower(update.Message.Text) == "/test" {
-					isAuthorized := callmebotapi.CallMeBotT{}.CallUser(update.Message.From.Username, "Привет! Я бот котороый тебя заебет!")
+	register := menu.Text("⚙ Настроить бота")
+	auth := menu.Text("→ Пройти авторизацию")
 
-					if isAuthorized != true {
-						sendMessage := telegramapi.SendMessageT{ChatID: update.Message.Chat.ID, Message: "Ты не авторизировался \nДля успешной работы бота перейди по линке: https://api2.callmebot.com/txt/auth.php \nНажми /test Что бы сделать тестовый вызов "}
+	bot.Handle("/start", func(messsage *tb.Message) {
+		sendStart(bot, register, *messsage, db)
+	})
 
-						telegramapi.BotT{}.SendMessage(botData, sendMessage)
-					} else {
-						user := persistUser(getSQLConnection(), update.Message.From.Username)
-						fmt.Println(user)
-						sendMessage := telegramapi.SendMessageT{ChatID: update.Message.Chat.ID, Message: "Отлично! Авторизация успешна!\nПерейдем к настройке оповещений"}
+	bot.Handle(&register, func(messsage *tb.Message) {
+		sendRegisterMessage(*bot, messsage, auth)
+	})
 
-						telegramapi.BotT{}.SendMessage(botData, sendMessage)
-					}
-				}
-			} else {
-				if strings.ToLower(update.Message.Text) == "/start" {
-					sendMessage := telegramapi.SendMessageT{ChatID: update.Message.Chat.ID, Message: "Что бы дабавить новое оповещение напиши /add 12:00 текст_звонка"}
+	bot.Handle(&auth, func(messsage *tb.Message) {
+		user := repositories.UserRepositoryT{}.GetUser(db, messsage.Sender.Username)
+		// user.IsAuthorized = callmebotapi.CallMeBotT{}.CallUser(user.Username, "Привет! Ты успешно прошел авторизацию! Продолжи настройку в боте.")
 
-					telegramapi.BotT{}.SendMessage(botData, sendMessage)
-				} else if strings.Contains(strings.ToLower(update.Message.Text), "/add") == true {
-					regex := regexp.MustCompile("\\/add\\s(?P<time>[\\d]{2}:[\\d]{2})\\s(?P<end>(?:.)+$)")
-					match := regex.MatchString(strings.ToLower(update.Message.Text))
+		user.IsAuthorized = true
 
-					if true == match {
-						matchSubmatch := regex.FindStringSubmatch(strings.ToLower(update.Message.Text))
-						result := make(map[string]string)
-						for i, name := range regex.SubexpNames() {
-							if i != 0 && name != "" {
-								result[name] = matchSubmatch[i]
-							}
-						}
+		fmt.Println(user)
 
-						repositories.AlarmsRepositoryT{}.AddAlarm(getSQLConnection(), user, result["time"], result["end"])
+		if user.IsAuthorized == false {
+			bot.Send(messsage.Sender, "К сожалению авторзация не прошла успешно. \nПопробуй еще раз...")
+			sendRegisterMessage(*bot, messsage, auth)
+		} else {
+			user = repositories.UserRepositoryT{}.UpdateUser(db, user)
+			sendStart(bot, register, *messsage, db)
+		}
 
-						sendMessage := telegramapi.SendMessageT{ChatID: update.Message.Chat.ID, Message: "Добавлено оповещение на " + result["time"]}
+	})
 
-						telegramapi.BotT{}.SendMessage(botData, sendMessage)
-					}
-				}
+	bot.Handle("/add", func(message *tb.Message) {
+		handleTimer(message, db)
+	})
 
+	bot.Start()
+}
+
+func sendRegisterMessage(bot tb.Bot, messsage *tb.Message, auth tb.Btn) {
+	inline := &tb.ReplyMarkup{}
+
+	call := inline.URL("ℹ Сделать запрос на разрешение доступа", "https://api2.callmebot.com/txt/auth.php")
+
+	inline.Inline(
+		inline.Row(call),
+	)
+
+	replyMenu := &tb.ReplyMarkup{
+		ResizeReplyKeyboard: true,
+		OneTimeKeyboard:     true,
+		ReplyKeyboardRemove: true,
+	}
+
+	replyMenu.Reply(
+		replyMenu.Row(auth),
+	)
+
+	bot.Send(messsage.Sender, "Сейчас я сделаю запрос досупа к совершению звонков...", replyMenu)
+	bot.Send(
+		messsage.Sender,
+		"<i>Я не запрашиваю доступ</i><strong> к твоим звонкам или контантам!</strong><i>Всегда читай список запрашиваимых данныйх.</i>",
+		inline,
+	)
+}
+
+func sendStart(bot *tb.Bot, register tb.Btn, messsage tb.Message, db *gorm.DB) {
+	user := repositories.UserRepositoryT{}.GetUser(db, messsage.Sender.Username)
+
+	replyMenu := &tb.ReplyMarkup{
+		ResizeReplyKeyboard: true,
+		OneTimeKeyboard:     true,
+		ReplyKeyboardRemove: true,
+	}
+
+	if user.IsAuthorized == false {
+		replyMenu.Reply(replyMenu.Row(register))
+
+		bot.Send(messsage.Sender, "Привет, я бот который будет напоминать тебе о важном!", replyMenu)
+	} else {
+		bot.Send(messsage.Sender, "Что бы добавить оповещение напиши: \n <strong>/add 12:00 текст_звонка</strong>")
+	}
+}
+
+func handleTimer(messsage *tb.Message, db *gorm.DB) {
+	user := repositories.UserRepositoryT{}.GetUser(db, messsage.Sender.Username)
+
+	regex := regexp.MustCompile("\\/add\\s(?P<time>[\\d]{2}:[\\d]{2})\\s(?P<end>(?:.)+$)")
+	match := regex.MatchString(strings.ToLower(messsage.Text))
+
+	if true == match {
+		matchSubmatch := regex.FindStringSubmatch(strings.ToLower(messsage.Text))
+		result := make(map[string]string)
+		for i, name := range regex.SubexpNames() {
+			if i != 0 && name != "" {
+				result[name] = matchSubmatch[i]
 			}
-
 		}
 
-		time.Sleep(10 * time.Second)
+		repositories.AlarmsRepositoryT{}.AddAlarm(db, user, result["time"], result["end"])
 
+		// repositories.AlarmsRepositoryT{}.AddAlarm(getSQLConnection(), user, result["time"], result["end"])
+
+		// sendMessage := telegramapi.SendMessageT{ChatID: update.Message.Chat.ID, Message: "Добавлено оповещение на " + result["time"]}
+
+		// telegramapi.BotT{}.SendMessage(botData, sendMessage)
 	}
-}
-
-func getOrCreate(db *sql.DB, username string) entity.DBUserT {
-	user := entity.DBUserT{Username: username, IsAuthorized: false}
-
-	defer func() {
-		if recover := recover(); recover != nil {
-			print("will Work")
-		}
-	}()
-
-	user = repositories.UserRepositoryT{}.GetUser(db, username)
-
-	defer db.Close()
-
-	return user
-}
-
-func persistUser(db *sql.DB, username string) entity.DBUserT {
-	defer func() {
-		if recover := recover(); recover != nil {
-			print("will Work")
-		}
-	}()
-
-	repositories.UserRepositoryT{}.CreateUser(db, username)
-
-	defer db.Close()
-
-	return getOrCreate(db, username)
-}
-
-func getSQLConnection() *sql.DB {
-	db, err := sql.Open("mysql", "root:password@tcp(mysql)/project")
-
-	if err != nil {
-		panic(err.Error())
-	}
-
-	return db
 }
